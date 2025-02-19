@@ -17,6 +17,8 @@ COLUMNS = {
     'path': 75     
 }
 
+# just for check
+
 def get_process_info(pid):
     """Get process details including admin privileges (cross-platform)"""
     try:
