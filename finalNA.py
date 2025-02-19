@@ -2,9 +2,15 @@ import psutil
 import socket
 import os
 from datetime import datetime
-import platform
+import hashlib
+import requests
+import time
 import ctypes
+import platform
+from dotenv import load_dotenv
 
+
+load_dotenv()   
 
 COLUMNS = {
     'proto': 10,
@@ -12,10 +18,11 @@ COLUMNS = {
     'remote': 23,
     'status': 20,
     'pid': 8,
-    'admin': 5,  
-    'process': 22,  
-    'path': 75     
+    'process': 27,
+    'path': 75
 }
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
+
 
 def get_process_info(pid):
     """Get process details including admin privileges (cross-platform)"""
@@ -27,12 +34,11 @@ def get_process_info(pid):
 
         try:
             if platform.system() == 'Windows':
-                # Check if the current context is running with admin privileges
+                # Windows admin check
                 is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
             else:
-                # Check the process owner; flag as admin if the owner is "root"
-                username = process.username()
-                is_admin = (username == "root")
+                # Unix/Linux/Mac admin check
+                is_admin = os.geteuid() == 0
         except (psutil.AccessDenied, AttributeError):
             pass
 
@@ -40,7 +46,8 @@ def get_process_info(pid):
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return "N/A", "N/A", False
 
-def generate_table(connections):
+
+def generate_table(connections, is_admin_section=False):
     """Generate formatted table for network connections"""
     table = []
     header = (
@@ -49,43 +56,47 @@ def generate_table(connections):
         f"{'Remote Address':<{COLUMNS['remote']}} "
         f"{'Status':<{COLUMNS['status']}} "
         f"{'PID':<{COLUMNS['pid']}} "
-        f"{'Admin':<{COLUMNS['admin']}} "  
         f"{'Process Name':<{COLUMNS['process']}} "
         f"{'Process Path':<{COLUMNS['path']}}"
     )
+    
+    
     separator = "-" * (sum(COLUMNS.values()) + (len(COLUMNS) - 1))
+
+    if is_admin_section:
+        table.append("\nADMIN/ROOT PROCESSES:")
+    else:
+        table.append("\nSTANDARD PROCESSES:")
 
     table.append(header)
     table.append(separator)
 
     for conn in connections:
-        admin_flag = 'Y' if conn['is_admin'] else 'N'
         line = (
             f"{conn['proto']:<{COLUMNS['proto']}} "
             f"{conn['local']:<{COLUMNS['local']}} "
             f"{conn['remote']:<{COLUMNS['remote']}} "
             f"{conn['status']:<{COLUMNS['status']}} "
             f"{str(conn['pid']):<{COLUMNS['pid']}} "
-            f"{admin_flag:<{COLUMNS['admin']}} "  
             f"{conn['pname'][:COLUMNS['process']]:<{COLUMNS['process']}} "
             f"{str(conn['ppath'])[:COLUMNS['path']]:<{COLUMNS['path']}}"
         )
         table.extend([line, separator])
 
     if connections:
-        table.pop()  
+        table.pop()
 
     return table
+
 
 def dump_network_connections():
     """Generate network connection report"""
     try:
         connections = psutil.net_connections(kind='inet')
-        print(f"Retrieved {len(connections)} connections") 
     except RuntimeError as e:
         print(f"Error retrieving connections: {str(e)}")
         if platform.system() == 'Darwin':
-            print("On macOS, try: sudo python3 network_analyzer.py")
+            print("On macOS, try: sudo python3 script.py")
         elif platform.system() == 'Windows':
             print("On Windows, try running as Administrator")
         return []
@@ -93,7 +104,7 @@ def dump_network_connections():
     processed_connections = []
     for conn in connections:
         try:
-            # Determine protocol type
+            # Windows-specific UDP handling
             if platform.system() == 'Windows':
                 proto = "UDP" if conn.type == socket.SOCK_DGRAM and conn.laddr else "TCP"
             else:
@@ -120,30 +131,126 @@ def dump_network_connections():
 
     return processed_connections
 
-def main():
-    # Display note on how to run with proper privileges
-    if platform.system() == 'Darwin':
-        print("Note: On macOS, you might need to:")
-        print("1. Grant Full Disk Access to your terminal")
-        print("2. Run with: sudo python3 netcon.py\n")
-    elif platform.system() == 'Windows':
-        print("Note: Run as Administrator for full visibility\n")
 
-    processed_connections = dump_network_connections()
+def generate_md5(file_path):
+    """Generate MD5 hash for a file"""
+    try:
+        if not os.path.isfile(file_path):
+            return None
+        hash_md5 = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-    if not processed_connections:
-        print("No active network connections found.")
-        return
+
+def dump_process_hashes():
+    """Generate MD5 hashes for all processes"""
+    process_paths = set()
+    for proc in psutil.process_iter(['pid', 'exe']):
+        try:
+            if proc.info['exe']:
+                # Normalize path for Windows
+                path = os.path.normpath(proc.info['exe'])
+                process_paths.add(path)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"network_dump_{timestamp}.txt"
+    hash_filename = f"prochash{timestamp}.txt"
+    hashes = []
 
-    table_lines = generate_table(processed_connections)
-    with open(filename, "w") as f:
-        f.write(f"Network Connections - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write("\n".join(table_lines))
+    for path in process_paths:
+        md5_hash = generate_md5(path)
+        if md5_hash and not md5_hash.startswith("Error"):
+            hashes.append(f"{md5_hash}  {path}")
 
-    print(f"Network report saved to {filename}")
+    if hashes:
+        with open(hash_filename, "w") as f:
+            f.write("\n".join(hashes))
+        print(f"Process hashes dumped to {hash_filename}")
+        return hash_filename
+    return None
+
+
+def check_virustotal(hash_filename):
+    """Check hashes against VirusTotal"""
+    if not os.path.exists(hash_filename):
+        return
+
+    output_filename = f"vt_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+    with open(hash_filename) as f:
+        lines = [line.strip() for line in f.readlines()]
+
+    with open(output_filename, "w") as out:
+        out.write(f"Source Hash File: {hash_filename}\n\n")
+        out.write(f"{'Hash':<35}{'Malicious':<11}{'Detection':<11}{'Process Name':<30}{'Executable Path'}\n")
+        out.write("=" * 110 + "\n")  # Increased separator length
+
+        for line in lines:
+            if '  ' not in line:
+                continue
+            md5_hash, path = line.split('  ', 1)
+
+            # VirusTotal API call
+            url = f"https://www.virustotal.com/api/v3/files/{md5_hash}"
+            headers = {"x-apikey": VIRUSTOTAL_API_KEY}
+
+            try:
+                response = requests.get(url, headers=headers)
+                if response.status_code == 200:
+                    data = response.json()
+                    stats = data.get('data', {}).get('attributes', {})
+                    meaningful_name = stats.get('meaningful_name', 'N/A')
+                    analysis_stats = stats.get('last_analysis_stats', {})
+                    malicious = analysis_stats.get('malicious', 0)
+                    total = analysis_stats.get('total', 0)
+                    detection = f"{malicious}/{total}"
+
+                    out.write(f"{md5_hash:<35}{malicious:<11}{detection:<11}{meaningful_name[:30]:<30}{path}\n")
+                else:
+                    out.write(f"{md5_hash:<35}Error       API Error: {response.status_code}{'N/A':<30}{path}\n")
+            except Exception as e:
+                out.write(f"{md5_hash:<35}Error       {str(e)[:11]:<11}{'N/A':<30}{path}\n")
+
+
+    print(f"\nVirusTotal results saved to {output_filename}")
+
+def main():
+    """Main execution flow"""
+    if platform.system() == 'Darwin':
+        print("Note: On macOS, you might need to:")
+        print("1. Grant Full Disk Access to your terminal in System Preferences")
+        print("2. Run with: sudo python3 script.py\n")
+    elif platform.system() == 'Windows':
+        print("Note: On Windows, run as Administrator for full process visibility\n")
+
+    # Generate network connection report
+    processed_connections = dump_network_connections()
+
+    if processed_connections:
+        admin_conns = [c for c in processed_connections if c['is_admin']]
+        normal_conns = [c for c in processed_connections if not c['is_admin']]
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        network_filename = f"network_dump_{timestamp}.txt"
+
+        with open(network_filename, "w") as f:
+            f.write(f"Network Connections Dump - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("\n".join(generate_table(normal_conns)))
+            f.write("\n" * 3)
+            f.write("\n".join(generate_table(admin_conns, is_admin_section=True)))
+
+        print(f"Network connections dumped to {network_filename}")
+
+    # Generate process hashes and check with VirusTotal
+    hash_file = dump_process_hashes()
+    if hash_file:
+        check_virustotal(hash_file)
+
 
 if __name__ == "__main__":
     main()
