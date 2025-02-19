@@ -12,9 +12,9 @@ COLUMNS = {
     'remote': 23,
     'status': 20,
     'pid': 8,
-    'admin': 5,  # New column for admin flag
-    'process': 22,  # Column for process name
-    'path': 75      # Column for process path
+    'admin': 5,  
+    'process': 22,  
+    'path': 75     
 }
 
 def get_process_info(pid):
@@ -49,7 +49,7 @@ def generate_table(connections):
         f"{'Remote Address':<{COLUMNS['remote']}} "
         f"{'Status':<{COLUMNS['status']}} "
         f"{'PID':<{COLUMNS['pid']}} "
-        f"{'Admin':<{COLUMNS['admin']}} "  # New column
+        f"{'Admin':<{COLUMNS['admin']}} "  
         f"{'Process Name':<{COLUMNS['process']}} "
         f"{'Process Path':<{COLUMNS['path']}}"
     )
@@ -66,14 +66,14 @@ def generate_table(connections):
             f"{conn['remote']:<{COLUMNS['remote']}} "
             f"{conn['status']:<{COLUMNS['status']}} "
             f"{str(conn['pid']):<{COLUMNS['pid']}} "
-            f"{admin_flag:<{COLUMNS['admin']}} "  # Admin flag
+            f"{admin_flag:<{COLUMNS['admin']}} "  
             f"{conn['pname'][:COLUMNS['process']]:<{COLUMNS['process']}} "
             f"{str(conn['ppath'])[:COLUMNS['path']]:<{COLUMNS['path']}}"
         )
         table.extend([line, separator])
 
     if connections:
-        table.pop()  # Remove the last separator
+        table.pop()  
 
     return table
 
@@ -81,7 +81,7 @@ def dump_network_connections():
     """Generate network connection report"""
     try:
         connections = psutil.net_connections(kind='inet')
-        print(f"Retrieved {len(connections)} connections")  # Debug: number of connections retrieved
+        print(f"Retrieved {len(connections)} connections") 
     except RuntimeError as e:
         print(f"Error retrieving connections: {str(e)}")
         if platform.system() == 'Darwin':
