@@ -7,7 +7,10 @@ import requests
 import time
 import ctypes
 import platform
+from dotenv import load_dotenv
 
+
+load_dotenv()   
 
 COLUMNS = {
     'proto': 10,
@@ -18,7 +21,7 @@ COLUMNS = {
     'process': 27,
     'path': 75
 }
-VIRUSTOTAL_API_KEY = "4f3d391862ceeabbd55f72fd9ceca94a116b5d8f7767b2a126a730ad3bc7384d"  # Replace with your actual API key
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
 
 
 def get_process_info(pid):

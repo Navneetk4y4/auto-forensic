@@ -5,7 +5,7 @@ from datetime import datetime
 import platform
 import ctypes
 
-# Updated columns with Admin column
+
 COLUMNS = {
     'proto': 10,
     'local': 40,
