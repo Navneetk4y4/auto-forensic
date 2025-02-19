@@ -125,7 +125,7 @@ def main():
     if platform.system() == 'Darwin':
         print("Note: On macOS, you might need to:")
         print("1. Grant Full Disk Access to your terminal")
-        print("2. Run with: sudo python3 network_analyzer.py\n")
+        print("2. Run with: sudo python3 netcon.py\n")
     elif platform.system() == 'Windows':
         print("Note: Run as Administrator for full visibility\n")
 
