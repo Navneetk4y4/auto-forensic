@@ -1,6 +1,14 @@
 import csv
 import subprocess
 import re
+import os
+import requests
+from dotenv import load_dotenv
+import pandas as pd
+
+# Load API key from .env file
+load_dotenv()
+API_KEY = os.getenv("ABUSEIP_API_KEY")
 
 
 def get_network_connections():
@@ -52,7 +60,7 @@ def parse_connections(netstat_output):
                 'PID': pid
             })
 
-            # Handle IP extraction only for foreign_ips
+            # Extract IP from foreign address
             if foreign_addr.startswith('['):
                 ip_port = foreign_addr.split(']:')
                 ip = ip_port[0][1:] if len(ip_port) > 1 else foreign_addr
@@ -66,6 +74,41 @@ def parse_connections(netstat_output):
     return connections, foreign_ips
 
 
+def check_ip_abuse(ip_address):
+    """Check an IP address on AbuseIPDB and return abuse details"""
+    url = "https://api.abuseipdb.com/api/v2/check"
+    headers = {
+        "Key": API_KEY,
+        "Accept": "application/json"
+    }
+    params = {
+        "ipAddress": ip_address,
+        "maxAgeInDays": 90  # Check reports from last 90 days
+    }
+
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        data = response.json().get("data", {})
+        return {
+            "IP Address": data.get("ipAddress"),
+            "Abuse Score": data.get("abuseConfidenceScore"),
+            "Total Reports": data.get("totalReports"),
+            "ISP": data.get("isp"),
+            "Country": data.get("countryCode"),
+            "Last Reported": data.get("lastReportedAt")
+        }
+    else:
+        return {
+            "IP Address": ip_address,
+            "Abuse Score": "Error",
+            "Total Reports": "Error",
+            "ISP": "Error",
+            "Country": "Error",
+            "Last Reported": "Error"
+        }
+
+
 def save_to_csv(data, filename, fieldnames):
     """Save data to CSV file"""
     with open(filename, 'w', newline='', encoding='utf-8') as f:
@@ -73,32 +116,46 @@ def save_to_csv(data, filename, fieldnames):
         writer.writeheader()
         writer.writerows(data)
 
+
 def main():
     # Get network connections
     output = get_network_connections()
     if not output:
-        print("Failed to get network connections")
+        print("❌ Failed to get network connections")
         return
 
-    # Parse and save data
+    # Parse connections and extract foreign IPs
     connections, foreign_ips = parse_connections(output)
     
-    # Save all connections
+    # Save all network connections
     save_to_csv(
         connections,
         'network_connections.csv',
         ['Protocol', 'Local Address', 'Foreign Address', 'State', 'PID']
     )
     
-    # Save foreign addresses
+    # Save foreign IPs to CSV
     with open('foreign_addresses.csv', 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['Foreign IP Address'])
         writer.writerows([[ip] for ip in foreign_ips])
-    
-    print("Successfully created:")
+
+    print("✅ Successfully created:")
     print("- network_connections.csv (all connections)")
     print("- foreign_addresses.csv (unique foreign IPs)")
+
+    # Check each foreign IP with AbuseIPDB API
+    abuse_results = []
+    for ip in foreign_ips:
+        print(f"🔍 Checking IP: {ip}")
+        abuse_results.append(check_ip_abuse(ip))
+
+    # Save abuse report to CSV
+    df = pd.DataFrame(abuse_results)
+    df.to_csv("abuse_report.csv", index=False)
+
+    print("✅ abuse_report.csv created with IP reputation details")
+
 
 if __name__ == "__main__":
     main()
