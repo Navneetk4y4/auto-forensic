@@ -147,7 +147,6 @@ def main():
     # Check each foreign IP with AbuseIPDB API
     abuse_results = []
     for ip in foreign_ips:
-        print(f"🔍 Checking IP: {ip}")
         abuse_results.append(check_ip_abuse(ip))
 
     # Save abuse report to CSV
