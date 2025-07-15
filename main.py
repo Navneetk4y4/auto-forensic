@@ -49,14 +49,7 @@ def check_environment():
 
 def print_banner():
     """Display the tool banner"""
-    banner = r"""
-     ___        ______               _____             __ _       
-    / _ \      |  ____|             |  __ \           / _(_)      
-   / /_\ \_   _| |__ _ __ ___  ___  | |__) |_____   _| |_ _  ___ 
-  |  _  \ \ / /  __| '__/ _ \/ _ \ |  _  // _ \ \ / /  _| |/ _ \
-  | | | |\ V /| |  | | |  __/  __/ | | \ \  __/\ V /| | | |  __/
-  \_| |_/ \_/ |_|  |_|  \___|\___| |_|  \_\___| \_/ |_| |_|\___|
-                                                                  
+    banner = r"""                                                                  
   Automated Forensic Analysis Tool
   """
     print(banner)
